@@ -47,7 +47,7 @@ cd tempo-interview
 ./mvnw test -Dtest=SimpleCacheStampedeTest   # Task 2 stampede test only
 ```
 
-A successful run ends with `Tests run: 22, Failures: 0, Errors: 0, Skipped: 0` and `BUILD SUCCESS`. Per-test reports
+A successful run ends with `Tests run: 23, Failures: 0, Errors: 0, Skipped: 0` and `BUILD SUCCESS`. Per-test reports
 are written to `target/surefire-reports/`. The same `./mvnw test` runs in CI on every push (badge above).
 
 ## Task 1: approach
@@ -95,7 +95,7 @@ A kept node has all its ancestors kept, so **its depth is unchanged** in the out
 
 ## Task 1: tests
 
-`./mvnw test` runs 22 tests: 20 for Task 1 (below) and 2 for Task 2 (see [Task 2](#task-2-code-review)).
+`./mvnw test` runs 23 tests: 20 for Task 1 (below) and 3 for Task 2 (see [Task 2](#task-2-code-review)).
 
 Task 1: example from the task, empty input, accept-all / reject-all, single node, rejected root / inner node / leaf /
 last tree, passing node under a rejected ancestor, jumping back several levels after a skipped subtree, consecutive
@@ -132,7 +132,8 @@ deterministically (issue 3).
 - The blockers: expired entries are never removed (memory grows until `OutOfMemoryError`), and the cache has no size
   bound. The main concurrency issues: cache stampede on expiry, lost updates from slow loaders, wall-clock expiry.
 - Issue 3 is backed by a test, `SimpleCacheStampedeTest`: with 32 threads reading one key while it loads, the original
-  `SimpleCache` calls the backend 32 times; the single-flight fix from the review calls it once. The load is held open
+  `SimpleCache` calls the backend 32 times; the single-flight fix from the review calls it once, and when that one load
+  fails, all 32 readers get the error and the next read retries. The load is held open
   until every thread has read the cache, so the result does not depend on thread timing.
 - It ends with a recommendation (use Caffeine, with `AsyncLoadingCache` for slow loaders) and a short list of what the
   code already gets right.

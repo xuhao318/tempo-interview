@@ -122,15 +122,19 @@ database the cache was meant to protect.
 
 - it does not replace an **expired** entry, because the key is still present (needs `compute` with an expiry check);
 - it holds an internal bin lock while the loader runs, so a slow loader (a DB call) also blocks writes to unrelated
-  keys that hash to the same bin;
+  keys that hash to the same bin. On Java 21 the bin lock is `synchronized`, so a virtual thread running a slow
+  loader also pins its carrier thread (fixed in JDK 24 by JEP 491), and a few slow loads can stall unrelated tasks;
 - a loader that touches the same map can fail with `IllegalStateException: Recursive update`.
 
-Storing a `CompletableFuture<V>` per key and running the load outside the map lock avoids all three. Adding random
+Storing a `CompletableFuture<V>` per key and running the load outside the map lock avoids all three. A failed load
+must complete the future exceptionally, so every waiter gets the error instead of blocking forever, and must remove
+it (`remove(key, future)`), so the failure is not cached and the next read retries. Adding random
 jitter to the TTL spreads out expiries, and refreshing hot entries shortly before they expire avoids the herd
 entirely.
 
 **Measured:** `src/test/java/cache/SimpleCacheStampedeTest.java` runs 32 threads that read one key while its load is
-in progress. This `SimpleCache` sends all 32 to the backend; a per-key `CompletableFuture` sends one.
+in progress. This `SimpleCache` sends all 32 to the backend; a per-key `CompletableFuture` sends one. A third test
+makes that one load fail and checks that all 32 readers get the error, nothing stays cached, and the next read retries.
 
 ### 4. Lost update: a slow loader can overwrite newer data (Major)
 
