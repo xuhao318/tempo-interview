@@ -129,6 +129,9 @@ Storing a `CompletableFuture<V>` per key and running the load outside the map lo
 jitter to the TTL spreads out expiries, and refreshing hot entries shortly before they expire avoids the herd
 entirely.
 
+**Measured:** `src/test/java/cache/SimpleCacheStampedeTest.java` runs 32 threads that read one key while its load is
+in progress. This `SimpleCache` sends all 32 to the backend; a per-key `CompletableFuture` sends one.
+
 ### 4. Lost update: a slow loader can overwrite newer data (Major)
 
 **Lines:** L26 (unconditional `put`, last writer wins)
