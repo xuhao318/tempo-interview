@@ -1,5 +1,7 @@
 # Senior Developer Assessment
 
+[![CI](https://github.com/xuhao318/tempo-interview/actions/workflows/ci.yml/badge.svg)](https://github.com/xuhao318/tempo-interview/actions/workflows/ci.yml)
+
 - **Task 1** — Hierarchy filter: `src/main/java/hierarchy/HierarchyFilter.java`, tests in `src/test/java/hierarchy/HierarchyFilterTest.java`.
 - **Task 2** — Code review: [`SimpleCache.md`](SimpleCache.md).
 
@@ -17,6 +19,10 @@ src/main/java/hierarchy/
   HierarchyFilter.java             Task 1 solution: filter()
 src/test/java/hierarchy/
   HierarchyFilterTest.java         JUnit 5 tests (includes the original FilterTest example)
+src/test/java/cache/
+  SimpleCache.java                 the code under review, copied unchanged (test-only)
+  SimpleCacheStampedeTest.java     measures review issue 3: backend calls under concurrent misses
+.github/workflows/ci.yml           runs ./mvnw test on JDK 21 for every push and pull request
 SimpleCache.md                     Task 2 solution: the original task and code, followed by the review
 pom.xml                            Maven build: Java 21, JUnit 5
 mvnw, mvnw.cmd, .mvn/wrapper/      Maven wrapper, downloads Maven on first run
@@ -49,6 +55,23 @@ A kept node has all its ancestors kept, so **its depth is unchanged** in the out
 - Time O(n), extra space O(n) (output arrays, trimmed once at the end). No recursion, so very deep trees are safe.
 - The predicate is called at most once per node and never for descendants of a rejected node.
 
+## Design trade-offs
+
+- **Eager copy vs. lazy view.** `filter` returns a materialised copy. A lazy view (wrapping the input and skipping
+  rejected subtrees on access) would save memory, but `size()` and `nodeId(i)` need random access, so a view must either
+  rescan on every call or build an index of kept positions, which costs the same O(n) as the copy. A copy also makes
+  the result independent of later changes to the input and keeps the predicate calls in one predictable place.
+- **Allocate once, trim once.** The output arrays are allocated at the input size and trimmed at the end. Peak memory
+  is up to 2n ints per array, in exchange for no resizing inside the loop. A growable buffer would lower the peak when
+  most nodes are rejected; for the expected case (most nodes kept) one allocation plus one copy is cheaper.
+- **No validation of the input.** Checking the depth invariants is O(n) and would double the work of every call to
+  catch a bug in whoever built the hierarchy. That check belongs where hierarchies are constructed, not in every
+  consumer. The behaviour on invalid input is documented instead.
+- **Scaling further.** Trees in a forest are independent, so a very large forest can be split at depth-0 boundaries and
+  filtered in parallel, then concatenated. The filter also reads the input strictly front to back with O(1) state,
+  so it would work unchanged over a streamed hierarchy that does not fit in memory. Neither is needed at this size,
+  so neither is implemented.
+
 ## Assumptions
 
 - The input satisfies the depth invariants documented on `Hierarchy` (first depth is 0, depth increases by at most
@@ -79,5 +102,8 @@ unchanged in `original/SimpleCache.md`.
   explains the problem, its production impact, and the fix.
 - The blockers: expired entries are never removed (memory grows until `OutOfMemoryError`), and the cache has no size
   bound. The main concurrency issues: cache stampede on expiry, lost updates from slow loaders, wall-clock expiry.
+- Issue 3 is backed by a test, `SimpleCacheStampedeTest`: with 32 threads reading one key while it loads, the original
+  `SimpleCache` calls the backend 32 times; the single-flight fix from the review calls it once. The load is held open
+  until every thread has read the cache, so the result does not depend on thread timing.
 - It ends with a recommendation (use Caffeine, with `AsyncLoadingCache` for slow loaders) and a short list of what the
   code already gets right.
